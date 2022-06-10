@@ -1,3 +1,3 @@
 export const CONTRACTS: Record<string, string> = {
-    airdrop: "Airdrop",
+    airdrop: "Erc20Airdrop",
 };

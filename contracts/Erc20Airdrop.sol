@@ -7,8 +7,9 @@ import "@openzeppelin/contracts/security/Pausable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 import {MerkleProof} from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
+import "hardhat/console.sol";
 
-contract Airdrop is Ownable, Pausable {
+contract Erc20Airdrop is Ownable, Pausable {
     using SafeERC20 for IERC20;
 
     /* ======== STATE VARIABLES ======== */
@@ -18,39 +19,77 @@ contract Airdrop is Ownable, Pausable {
     struct Campaign {
         IERC20 token;
         uint256 redeemableAt;
-        bool isActive;
+        bool paused;
         bytes32 merkleRoot;
         uint256 redeemedAmount;
+        string uri;
     }
 
     mapping(uint256 => Campaign) public campaigns;
 
     /// @notice Mapping of addresses who have claimed tokens from campaign
-    mapping(uint256 => mapping(address => mapping(uint256 => bool))) public hasClaimed;
+    mapping(uint256 => mapping(address => uint256[])) public rewards;
 
     address public constant BNB = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+
+    modifier hasCampaign(uint256 _id) {
+        require(_id < _campaignIdCounter.current(), "Campaign does not exist");
+        _;
+    }
+
+    modifier whenCampaignUnpaused(uint256 _id) {
+        require(!campaigns[_id].paused, "Campaign is not active");
+        _;
+    }
+
+    function hasClaimed(uint256 _campaignId, address _to, uint256 _rewardId) public view returns (bool exist_) {
+        uint256[] memory userRewards = rewards[_campaignId][_to];
+
+        for(uint i = 0; i < userRewards.length; i++) {
+            if(rewards[_campaignId][_to][i] == _rewardId) exist_ = true;
+        }
+
+        return exist_;
+    }
+
+    function verify(uint256 _campaignId, address _to) public view returns(bool) {
+        if(rewards[_campaignId][_to].length > 0) return true;
+        return false;
+    }
 
     function createCampaign(
         IERC20 _token,
         uint256 _redeemableAt,
-        bytes32 _merkleRoot
-    ) external onlyOwner {
-        uint256 campaignId = _campaignIdCounter.current();
+        bytes32 _merkleRoot,
+        string memory _uri
+    ) external onlyOwner returns (uint256 campaignId_) {
+        campaignId_ = _campaignIdCounter.current();
 
         _campaignIdCounter.increment();
-        Campaign storage newCampaign = campaigns[campaignId];
+        Campaign storage newCampaign = campaigns[campaignId_];
         newCampaign.token = _token;
         newCampaign.redeemableAt = _redeemableAt;
-        newCampaign.isActive = true;
+        newCampaign.paused = false;
         newCampaign.merkleRoot = _merkleRoot;
+        newCampaign.uri = _uri;
     }
 
-    function activeCampaign(uint256 _id) external onlyOwner {
-        campaigns[_id].isActive = true;
-    }
-
-    function deactiveCampaign(uint256 _id) external onlyOwner {
-        campaigns[_id].isActive = false;
+    function updateCampain(
+        uint256 _campaignId, 
+        IERC20 _token, 
+        uint256 _redeemableAt, 
+        bool _paused, 
+        bytes32 _merkleRoot, 
+        uint256 _redeemedAmount, 
+        string memory _uri
+    ) public onlyOwner hasCampaign(_campaignId) {
+        Campaign storage campaign = campaigns[_campaignId];
+        campaign.token = _token;
+        campaign.redeemableAt = _redeemableAt;
+        campaign.paused = _paused;
+        campaign.merkleRoot = _merkleRoot;
+        campaign.redeemedAmount = _redeemedAmount;
+        campaign.uri = _uri;
     }
 
     function getCurrentCounter() public view returns (uint256) {
@@ -66,37 +105,25 @@ contract Airdrop is Ownable, Pausable {
         }
     }
 
-    function batchWithdraw(IERC20[] calldata _quoteTokens, uint256[] calldata _amounts) external onlyOwner {
-        require(_quoteTokens.length == _amounts.length, "_quoteTokens length and _amount length mismatch");
-
-        for (uint256 i = 0; i < _quoteTokens.length; i++) {
-            if (address(_quoteTokens[i]) != BNB) {
-                _quoteTokens[i].safeTransfer(msg.sender, _amounts[i]);
-            } else {
-                payable(msg.sender).transfer(_amounts[i]);
-            }
-        }
-    }
-
     function redeem(
         uint256 _campaignId,
         address _to,
         uint256 _amount,
         uint256 _rewardId,
         bytes32[] calldata _proof
-    ) external whenNotPaused {
+    ) external whenNotPaused whenCampaignUnpaused(_campaignId) {
         Campaign storage campaign = campaigns[_campaignId];
-        require(campaign.isActive, "campaign is not activated");
         require(campaign.redeemableAt < block.timestamp, "campaign is not started yet");
-        require(!hasClaimed[_campaignId][_to][_rewardId], "already claimed");
+
+        require(!hasClaimed(_campaignId, _to, _rewardId), "already claimed");
 
         // Verify merkle proof, or revert if not in tree
-        bytes32 leaf = keccak256(abi.encodePacked(_to, _amount, _rewardId));
+        bytes32 leaf = keccak256(abi.encodePacked(_to, _rewardId, _amount));
         bool isValidLeaf = MerkleProof.verify(_proof, campaign.merkleRoot, leaf);
         require(isValidLeaf, "leaf not in merkle tree");
         campaign.redeemedAmount += _amount;
         // Set address to claimed
-        hasClaimed[_campaignId][_to][_rewardId] = true;
+        rewards[_campaignId][_to].push(_rewardId);
 
         if (address(campaign.token) != BNB) {
             campaign.token.safeTransfer(_to, _amount);
