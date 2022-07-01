@@ -97,9 +97,7 @@ describe("Erc20Airdrop", () => {
                 campaignUri
             );
             await createCampaignTx.wait();
-
             const newRedeemableAt = Date.now() + 1000;
-            const redeemedAmount = ethers.utils.parseEther("100");
             const newCampaignUri = "https://";
             const newPaused = true;
 
@@ -109,7 +107,6 @@ describe("Erc20Airdrop", () => {
                 newRedeemableAt,
                 newPaused,
                 merkleTreeData.root,
-                redeemedAmount,
                 newCampaignUri
             );
             await updateCampaignTx.wait();
@@ -129,7 +126,6 @@ describe("Erc20Airdrop", () => {
                         newRedeemableAt,
                         newPaused,
                         merkleTreeData.root,
-                        redeemedAmount,
                         newCampaignUri
                     )
             ).to.be.revertedWith("Ownable: caller is not the owner");
@@ -141,7 +137,6 @@ describe("Erc20Airdrop", () => {
                     newRedeemableAt,
                     newPaused,
                     merkleTreeData.root,
-                    redeemedAmount,
                     newCampaignUri
                 )
             ).to.be.revertedWith("Campaign does not exist");
@@ -245,7 +240,6 @@ describe("Erc20Airdrop", () => {
                 campaign.redeemableAt,
                 true,
                 campaign.merkleRoot,
-                campaign.redeemedAmount,
                 campaign.uri
             );
             await updateCampaignTx.wait();
@@ -294,7 +288,7 @@ describe("Erc20Airdrop", () => {
             ).to.be.revertedWith("leaf not in merkle tree");
         });
 
-        it.only("cannot claim twice for one campaign one reward", async () => {
+        it("cannot claim twice for one campaign one reward", async () => {
             const leaf: Buffer = generateLeaf(
                 other.address,
                 otherRewardId,

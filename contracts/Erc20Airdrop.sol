@@ -79,7 +79,6 @@ contract Erc20Airdrop is Ownable, Pausable {
         uint256 _redeemableAt, 
         bool _paused, 
         bytes32 _merkleRoot, 
-        uint256 _redeemedAmount, 
         string memory _uri
     ) public onlyOwner hasCampaign(_campaignId) {
         Campaign storage campaign = campaigns[_campaignId];
@@ -87,7 +86,6 @@ contract Erc20Airdrop is Ownable, Pausable {
         campaign.redeemableAt = _redeemableAt;
         campaign.paused = _paused;
         campaign.merkleRoot = _merkleRoot;
-        campaign.redeemedAmount = _redeemedAmount;
         campaign.uri = _uri;
     }
 
